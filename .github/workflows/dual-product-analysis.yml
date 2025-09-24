@@ -1,0 +1,55 @@
+name: Dual Product Weight Analysis
+
+on:
+  schedule:
+    # Run every 30 minutes
+    - cron: '*/30 * * * *'
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  analyze-product-weights:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install gspread google-auth google-auth-oauthlib google-auth-httplib2
+        pip install pandas python-dotenv
+
+    - name: Run Dual Product Weight Analysis
+      env:
+        # Google Sheets Configuration - All required secrets matching .env
+        PURCHASE_SHEET_ID: ${{ secrets.PURCHASE_SHEET_ID }}
+        PURCHASE_SHEET_NAME: ${{ secrets.PURCHASE_SHEET_NAME }}
+        INVENTORY_SHEET_ID: ${{ secrets.INVENTORY_SHEET_ID }}
+        INVENTORY_SHEET_NAME: ${{ secrets.INVENTORY_SHEET_NAME }}
+        STOCK_RELEASE_SHEET_ID: ${{ secrets.STOCK_RELEASE_SHEET_ID }}
+        STOCK_INFLOW_SHEET_NAME: ${{ secrets.STOCK_INFLOW_SHEET_NAME }}
+        RELEASE_SHEET_NAME: ${{ secrets.RELEASE_SHEET_NAME }}
+        OUTPUT_SHEET_NAME: ${{ secrets.OUTPUT_SHEET_NAME }}
+
+        # Service Account Configuration (JSON as string)
+        SERVICE_ACCOUNT_JSON: ${{ secrets.SERVICE_ACCOUNT_JSON }}
+      run: |
+        echo "🚀 Starting Dual Product Weight Analysis..."
+        python product_weight_analysis.py
+
+    - name: Analysis completion notification
+      if: always()
+      run: |
+        if [ $? -eq 0 ]; then
+          echo "✅ Dual product weight analysis completed successfully!"
+          echo "📊 Dashboard updated with latest reconciliation data"
+        else
+          echo "❌ Dual product weight analysis failed"
+          echo "🔍 Check logs above for error details"
+        fi

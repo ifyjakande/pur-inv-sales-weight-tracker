@@ -978,7 +978,7 @@ class GizzardWeightAnalyzer:
                 }
             })
 
-            # 2. Subtitle - Soft Lavender (Row 2)
+            # 2. Subtitle - Light Gray #F5F5F5 (Row 2)
             format_requests.append({
                 'repeatCell': {
                     'range': {
@@ -990,7 +990,7 @@ class GizzardWeightAnalyzer:
                     },
                     'cell': {
                         'userEnteredFormat': {
-                            'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.95},
+                            'backgroundColor': {'red': 0.96, 'green': 0.96, 'blue': 0.96},
                             'textFormat': {'italic': True, 'fontSize': 11, 'foregroundColor': {'red': 0.3, 'green': 0.3, 'blue': 0.5}},
                             'horizontalAlignment': 'CENTER'
                         }
@@ -1426,10 +1426,10 @@ class GizzardWeightAnalyzer:
                 }
             )
 
-            # Subtitle formatting - Light purple
+            # Subtitle formatting - Light Gray #F5F5F5
             self.rate_manager.execute_with_backoff(
                 worksheet.format, 'A2:AA2', {
-                    'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.95},
+                    'backgroundColor': {'red': 0.96, 'green': 0.96, 'blue': 0.96},
                     'textFormat': {'italic': True, 'fontSize': 11},
                     'horizontalAlignment': 'CENTER'
                 }

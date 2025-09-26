@@ -23,8 +23,12 @@ wheels/
 .installed.cfg
 *.egg
 
-# Service account files
+# Service account files - never commit these!
+*.json
 pullus-pipeline-40a5302e034d.json
+
+# Exception: Allow hash tracking files
+!last_source_hash.json
 
 # macOS
 .DS_Store

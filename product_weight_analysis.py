@@ -248,22 +248,36 @@ class GizzardWeightAnalyzer:
                 'https://www.googleapis.com/auth/drive'
             ]
 
-            # Check if we have SERVICE_ACCOUNT_JSON (for GitHub Actions)
+            # Check if we have SERVICE_ACCOUNT_JSON (for GitHub Actions and local with JSON)
             service_account_json = os.getenv('SERVICE_ACCOUNT_JSON')
 
             if service_account_json:
-                # GitHub Actions mode: Use JSON string from secrets
-                service_account_info = json.loads(service_account_json)
-                credentials = Credentials.from_service_account_info(
-                    service_account_info,
-                    scopes=scope
-                )
+                # Use JSON string from environment variable
+                try:
+                    service_account_info = json.loads(service_account_json)
+                    credentials = Credentials.from_service_account_info(
+                        service_account_info,
+                        scopes=scope
+                    )
+                    print("✅ Using service account from SERVICE_ACCOUNT_JSON")
+                except json.JSONDecodeError:
+                    # If JSON parsing fails, treat as file path for backward compatibility
+                    if os.path.exists(service_account_json):
+                        credentials = Credentials.from_service_account_file(
+                            service_account_json,
+                            scopes=scope
+                        )
+                        print(f"✅ Using service account file: {service_account_json}")
+                    else:
+                        raise Exception(f"Invalid JSON content and file not found: {service_account_json}")
+
             elif self.service_account_path and os.path.exists(self.service_account_path):
-                # Local development mode: Use file path
+                # Local development mode: Use file path from SERVICE_ACCOUNT_PATH
                 credentials = Credentials.from_service_account_file(
                     self.service_account_path,
                     scopes=scope
                 )
+                print(f"✅ Using service account file: {self.service_account_path}")
             else:
                 raise Exception("No valid service account credentials found. Set SERVICE_ACCOUNT_JSON environment variable or SERVICE_ACCOUNT_PATH file.")
 

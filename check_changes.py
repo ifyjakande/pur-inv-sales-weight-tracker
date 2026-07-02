@@ -9,9 +9,11 @@ Environment-aware: Always run in local development, smart detection in productio
 import json
 import os
 import sys
+import time
 import hashlib
 from google.oauth2.service_account import Credentials
 import gspread
+from gspread.utils import fill_gaps
 
 def load_env_file():
     """Load environment variables from .env file if it exists."""
@@ -53,19 +55,48 @@ def get_credentials():
         print(f"❌ Error creating credentials: {e}")
         sys.exit(1)
 
-def get_worksheet_hash(spreadsheet_id, worksheet_name, credentials):
-    """Get content hash of a specific worksheet."""
+def api_call_with_backoff(call, *args, **kwargs):
+    """Run a gspread call, retrying 429/500/503 with exponential backoff."""
+    delay = 2
+    for attempt in range(4):
+        try:
+            return call(*args, **kwargs)
+        except gspread.exceptions.APIError as e:
+            status = getattr(getattr(e, 'response', None), 'status_code', None)
+            if attempt == 3 or status not in (429, 500, 503):
+                raise
+            print(f"API error {status}, retrying in {delay}s...")
+            time.sleep(delay)
+            delay *= 2
+
+def fetch_all_worksheet_values(source_sheets, credentials):
+    """Fetch values for every source worksheet: one open per distinct
+    spreadsheet, one batched values read per spreadsheet."""
+    gc = gspread.authorize(credentials)
+    values_by_sheet = {}
+    for sheet_id in dict.fromkeys(s['id'] for s in source_sheets):
+        names = [s['name'] for s in source_sheets if s['id'] == sheet_id]
+        spreadsheet = api_call_with_backoff(gc.open_by_key, sheet_id)
+        try:
+            response = api_call_with_backoff(
+                spreadsheet.values_batch_get, [f"'{name}'" for name in names])
+        except gspread.exceptions.APIError as e:
+            print(f"Error reading worksheets {names} from spreadsheet {sheet_id}: {e}")
+            print("Available worksheets:")
+            try:
+                for ws in spreadsheet.worksheets():
+                    print(f"  - {ws.title}")
+            except Exception:
+                pass
+            sys.exit(1)
+        for name, value_range in zip(names, response.get('valueRanges', [])):
+            # pad exactly like get_all_values() so the hash input stays identical
+            values_by_sheet[(sheet_id, name)] = fill_gaps(value_range.get('values', []))
+    return values_by_sheet
+
+def get_worksheet_hash(all_values, worksheet_name):
+    """Get content hash of a specific worksheet's values."""
     try:
-        # Use gspread for easier worksheet access
-        gc = gspread.authorize(credentials)
-        spreadsheet = gc.open_by_key(spreadsheet_id)
-
-        # Get the specific worksheet
-        worksheet = spreadsheet.worksheet(worksheet_name)
-
-        # Get all values from the worksheet
-        all_values = worksheet.get_all_values()
-
         # Create hash of the content
         content_str = str(all_values)
         content_hash = hashlib.md5(content_str.encode('utf-8')).hexdigest()
@@ -76,17 +107,6 @@ def get_worksheet_hash(spreadsheet_id, worksheet_name, credentials):
 
         return content_hash
 
-    except gspread.WorksheetNotFound:
-        print(f"❌ Worksheet '{worksheet_name}' not found in spreadsheet {spreadsheet_id}")
-        print("Available worksheets:")
-        try:
-            gc = gspread.authorize(credentials)
-            spreadsheet = gc.open_by_key(spreadsheet_id)
-            for ws in spreadsheet.worksheets():
-                print(f"  - {ws.title}")
-        except Exception:
-            pass
-        sys.exit(1)
     except Exception as e:
         print(f"❌ Error getting worksheet hash for {worksheet_name}: {e}")
         sys.exit(1)
@@ -134,11 +154,14 @@ def get_combined_source_data_hash(credentials):
 
         print(f"🔍 Checking {len(source_sheets)} source data worksheets...")
 
+        # One client, one open + one batched read per distinct spreadsheet
+        values_by_sheet = fetch_all_worksheet_values(source_sheets, credentials)
+
         # Get hash for each source worksheet
         individual_hashes = []
         for sheet in source_sheets:
             print(f"\n📋 Processing {sheet['label']}:")
-            sheet_hash = get_worksheet_hash(sheet['id'], sheet['name'], credentials)
+            sheet_hash = get_worksheet_hash(values_by_sheet[(sheet['id'], sheet['name'])], sheet['name'])
             individual_hashes.append(f"{sheet['label']}:{sheet_hash}")
 
         # Create combined hash from all individual hashes

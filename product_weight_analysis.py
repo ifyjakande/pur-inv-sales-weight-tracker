@@ -82,6 +82,8 @@ class BatchRequestManager:
         self.gc = gc
         self.rate_manager = rate_manager
         self.cached_spreadsheets = {}
+        self.cached_worksheet_data = {}
+        self.cached_sheet_ids = {}
 
     def get_spreadsheet(self, sheet_id):
         """Get spreadsheet with caching"""
@@ -92,19 +94,26 @@ class BatchRequestManager:
         return self.cached_spreadsheets[sheet_id]
 
     def get_worksheet_data(self, sheet_id, sheet_name, use_batch=True):
-        """Get worksheet data with batch optimization"""
+        """Get worksheet data with batch optimization (read once per run)"""
+        cache_key = (sheet_id, sheet_name, use_batch)
+        if cache_key in self.cached_worksheet_data:
+            return self.cached_worksheet_data[cache_key]
+
         spreadsheet = self.get_spreadsheet(sheet_id)
         worksheet = spreadsheet.worksheet(sheet_name)
 
         if use_batch:
             # Use batch get to retrieve all data in one call
-            return self.rate_manager.execute_with_backoff(
+            data = self.rate_manager.execute_with_backoff(
                 worksheet.get_all_values
             )
         else:
-            return self.rate_manager.execute_with_backoff(
+            data = self.rate_manager.execute_with_backoff(
                 worksheet.get_all_records
             )
+
+        self.cached_worksheet_data[cache_key] = data
+        return data
 
     def batch_update_spreadsheet(self, sheet_id, updates):
         """Perform batch updates to minimize API calls"""
@@ -114,12 +123,13 @@ class BatchRequestManager:
         )
 
     def get_sheet_id(self, spreadsheet, sheet_name):
-        """Get the actual sheet ID for a given sheet name"""
+        """Get the actual sheet ID for a given sheet name (one metadata fetch per spreadsheet)"""
         try:
-            for sheet in spreadsheet.worksheets():
-                if sheet.title == sheet_name:
-                    return sheet.id
-            return 0  # Fallback to 0 if not found
+            if spreadsheet.id not in self.cached_sheet_ids:
+                self.cached_sheet_ids[spreadsheet.id] = {
+                    sheet.title: sheet.id for sheet in spreadsheet.worksheets()
+                }
+            return self.cached_sheet_ids[spreadsheet.id].get(sheet_name, 0)  # Fallback to 0 if not found
         except Exception as e:
             logger.warning("Could not get sheet ID")
             return 0

@@ -3,7 +3,7 @@ name: Dual Product Weight Analysis
 on:
   schedule:
     # Run every 5 minutes
-    - cron: '*/5 * * * *'
+    - cron: '3-59/5 * * * *'
   workflow_dispatch:  # Allow manual triggering
 
 permissions:
